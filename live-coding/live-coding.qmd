@@ -1,0 +1,833 @@
+---
+title: "Data Visualization in R, Live Coding Companion"
+subtitle: "Follow along, modify, and keep this as a reference"
+author: "Siddhartha Bora"
+date: "May 28, 2026"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    code-fold: false
+    code-copy: true
+    code-link: true
+    embed-resources: true
+    theme: cosmo
+    fig-width: 7
+    fig-height: 4
+execute:
+  warning: false
+  message: false
+  cache: false
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    fig.retina: 2
+---
+
+```{r setup}
+#| include: false
+library(here)
+library(tidyverse)
+library(scales)
+library(patchwork)
+library(colorspace)
+# Note: scale_*_viridis_d() / _c() are built into ggplot2 since 3.0.0,
+# so library(viridis) isn't needed for the color scales themselves.
+
+# Shared helpers from the project's R/ directory.
+source(here("R", "helpers.R"))
+
+# Project-wide theme.
+theme_set(theme_webinar())
+
+set.seed(42)
+```
+
+## How to use this document
+
+This companion mirrors the slide deck but with **more prose**, **all code runnable**, and **comments explaining every line**. Open this in RStudio alongside the slides. Each code chunk is independent enough that you can run them out of order if you want to skip around.
+
+### Required packages
+
+```{r}
+#| eval: false
+install.packages(c(
+  "tidyverse",   # ggplot2, dplyr, tidyr, readr, etc.
+  "scales",      # axis label formatters
+  "patchwork",   # combining plots
+  "viridis",     # color palettes
+  "colorspace",  # colorblindness simulation
+  "sf",          # spatial data
+  "tigris",      # US Census shapefiles
+  "ggspatial",   # scale bars and north arrows for maps
+  "ggrepel",     # non-overlapping text labels
+  "ragg",        # better graphics device
+  "here",        # path management
+  "gapminder"    # example data
+))
+```
+
+---
+
+## 1. Tidy data
+
+The three rules of tidy data (Wickham 2014):
+
+1. Each **variable** is a column.
+2. Each **observation** is a row.
+3. Each **value** is a cell.
+
+Why we care: `ggplot2` is built around tidy data. If your data isn't tidy, plotting becomes a fight.
+
+```{r}
+library(tibble)
+
+# Untidy: subjects encoded as column names
+untidy <- tibble(
+  student_id = c(1, 2, 3),
+  english    = c(70, 78, 82),
+  math       = c(87, 65, 91),
+  science    = c(100, 83, 88)
+)
+untidy
+
+# Tidy: one row per (student, subject) observation
+tidy <- tibble(
+  student_id = rep(1:3, each = 3),
+  subject    = rep(c("english", "math", "science"), times = 3),
+  score      = c(70, 87, 100,
+                 78, 65, 83,
+                 82, 91, 88)
+)
+tidy
+```
+
+The key question: can you say "color the plot by subject"? Only with the tidy version, because only the tidy version *has* a `subject` column.
+
+## 2. Long vs wide
+
+```{r}
+library(tidyr)
+
+scores_wide <- tibble(
+  student = c(1, 2, 3),
+  english = c(70, 78, 82),
+  math    = c(87, 65, 91),
+  science = c(100, 83, 88)
+)
+
+# WIDE -> LONG via pivot_longer
+scores_long <- scores_wide |>
+  pivot_longer(
+    cols      = -student,        # everything EXCEPT student
+    names_to  = "subject",       # new column name for the old col names
+    values_to = "score"          # new column name for the values
+  )
+
+scores_long
+
+# LONG -> WIDE via pivot_wider (the inverse)
+scores_long |>
+  pivot_wider(names_from = subject, values_from = score)
+```
+
+**Rule of thumb:** long for analysis/plotting; wide only for final tables shown to humans.
+
+## 3. Your first ggplot
+
+Every ggplot needs three things: data, an aesthetic mapping, and a geom.
+
+```{r}
+# The dataset `economics` is built into ggplot2
+glimpse(economics)
+```
+
+```{r}
+# Minimal example
+ggplot(data = economics, mapping = aes(x = date, y = unemploy)) +
+  geom_line()
+```
+
+```{r}
+# Idiomatic version: pipe data in, drop argument names
+economics |>
+  ggplot(aes(x = date, y = unemploy)) +
+  geom_line()
+```
+
+Same data, different geom:
+
+```{r}
+economics |>
+  ggplot(aes(x = date, y = unemploy)) +
+  geom_point(alpha = 0.3, size = 0.6)
+```
+
+Mapping a variable to color:
+
+```{r}
+# economics_long stacks multiple economic indicators
+glimpse(economics_long)
+
+economics_long |>
+  ggplot(aes(x = date, y = value01, color = variable)) +
+  geom_line(linewidth = 0.8) +
+  scale_color_viridis_d(end = 0.85)
+```
+
+Notice: `color = variable` works because `variable` is a column. This is what tidy long data buys you.
+
+## 4. Layer by layer: the worked example
+
+Sample data: life expectancy at birth in three countries.
+
+```{r}
+life_exp <- tribble(
+  ~country,  ~year, ~life_exp,
+  "Brazil",   1990,  65.7,
+  "Brazil",   2000,  70.1,
+  "Brazil",   2010,  73.4,
+  "Brazil",   2020,  75.9,
+  "India",    1990,  58.5,
+  "India",    2000,  62.6,
+  "India",    2010,  66.6,
+  "India",    2020,  70.2,
+  "USA",      1990,  75.2,
+  "USA",      2000,  76.8,
+  "USA",      2010,  78.5,
+  "USA",      2020,  77.0
+)
+```
+
+### Step 1: the crudest version
+
+```{r}
+p1 <- life_exp |>
+  ggplot(aes(x = year, y = life_exp, color = country)) +
+  geom_line()
+p1
+```
+
+### Step 2: labels (treating the plot as an object)
+
+```{r}
+p2 <- p1 +
+  labs(
+    title    = "Life expectancy at birth, 1990–2020",
+    subtitle = "Brazil, India, and the United States",
+    x        = NULL,
+    y        = "Years",
+    color    = NULL,
+    caption  = "Source: illustrative data"
+  )
+p2
+```
+
+### Step 3: line weight and points
+
+```{r}
+# NOTE: linewidth, not size. ggplot 3.4.0 (2022) deprecated `size` for lines.
+p3 <- p2 +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5)
+p3
+```
+
+### Step 4: deliberate color palette
+
+```{r}
+# viridis is perceptually uniform AND colorblind-safe
+p4 <- p3 +
+  scale_color_viridis_d(option = "D", end = 0.85)
+p4
+```
+
+### Step 5: a clean theme
+
+```{r}
+p5 <- p4 +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    plot.subtitle    = element_text(color = "grey40"),
+    legend.position  = "bottom",
+    panel.grid.minor = element_blank()
+  )
+p5
+```
+
+### Step 6: axis breaks and limits
+
+```{r}
+p6 <- p5 +
+  scale_x_continuous(breaks = seq(1990, 2020, 10)) +
+  scale_y_continuous(
+    limits = c(55, 80),
+    labels = scales::label_number(suffix = " yr")
+  )
+p6
+```
+
+The before/after:
+
+```{r}
+#| fig-height: 3.5
+library(patchwork)
+(p1 + ggtitle("Step 1")) + (p6 + ggtitle("Step 6"))
+```
+
+**Key insight:** you didn't write a 50-line plotting function. You added six small, named layers. If you change your mind about color later, you change one line.
+
+## 5. Color, deliberately
+
+Three kinds of color scale, picked first by the *type* of variable:
+
+```{r}
+#| fig-height: 5
+library(patchwork)
+
+df_qual <- tibble(x = letters[1:6], y = c(3, 5, 2, 7, 4, 6))
+df_seq  <- tibble(x = 1:10)
+df_div  <- tibble(x = -5:5)
+
+p_qual <- ggplot(df_qual, aes(x, y, fill = x)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Qualitative, unordered categories") +
+  theme(legend.position = "none")
+
+p_seq <- ggplot(df_seq, aes(x, y = 1, fill = x)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = "Sequential, ordered, one direction") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+p_div <- ggplot(df_div, aes(x, y = 1, fill = x)) +
+  geom_tile() +
+  scale_fill_distiller(palette = "RdBu", limits = c(-5, 5)) +
+  labs(title = "Diverging, values around a midpoint") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+p_qual / p_seq / p_div
+```
+
+The functions to remember:
+
+```{r}
+#| eval: false
+# Discrete (categorical)
+scale_color_viridis_d()
+scale_color_brewer(palette = "Set2")
+scale_color_manual(values = c("group1" = "#E69F00", "group2" = "#56B4E9"))
+
+# Continuous
+scale_color_viridis_c()
+scale_color_gradient(low = "white", high = "darkgreen")
+scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+
+# Replace _color_ with _fill_ for fill aesthetics
+```
+
+Default ggplot colors look colorful but aren't perceptually uniform or colorblind-safe. **Pick a palette deliberately, once per project.**
+
+The Okabe-Ito palette, designed specifically for colorblind accessibility:
+
+```{r}
+# The canonical 8-color Okabe-Ito palette (matches R/helpers.R). The first
+# color is black, so skip it with `[-1]` when you don't want a black series.
+okabe_ito <- c("#000000", "#E69F00", "#56B4E9", "#009E73",
+               "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# Used as a manual scale
+ggplot(life_exp, aes(year, life_exp, color = country)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = okabe_ito[-1]) +
+  labs(title = "Same plot with Okabe-Ito colors")
+```
+
+## 6. Themes
+
+```{r}
+#| fig-height: 5
+p_base_demo <- ggplot(life_exp |> filter(country == "Brazil"),
+                      aes(year, life_exp)) +
+  geom_line(linewidth = 1, color = "#2c5f2d") +
+  geom_point(size = 2, color = "#2c5f2d") +
+  labs(x = NULL, y = "Years")
+
+(p_base_demo + theme_gray()    + ggtitle("theme_gray (default)")) +
+(p_base_demo + theme_minimal() + ggtitle("theme_minimal")) +
+(p_base_demo + theme_bw()      + ggtitle("theme_bw")) +
+(p_base_demo + theme_classic() + ggtitle("theme_classic"))
+```
+
+Set a project-wide theme at the top of every script:
+
+```{r}
+#| eval: false
+theme_set(
+  theme_minimal(base_size = 13) +
+    theme(
+      plot.title       = element_text(face = "bold"),
+      plot.subtitle    = element_text(color = "grey40"),
+      panel.grid.minor = element_blank(),
+      legend.position  = "bottom"
+    )
+)
+```
+
+Every plot in the script now inherits this theme. Change your mind? Change one block.
+
+## 7. Number formatting
+
+The `scales` package is essential for axis labels.
+
+```{r}
+library(scales)
+
+ggplot(economics, aes(date, unemploy * 1000)) +
+  geom_line(linewidth = 1, color = "#2c5f2d") +
+  scale_y_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
+  scale_x_date(date_breaks = "10 years", date_labels = "%Y") +
+  labs(title = "US unemployed persons", x = NULL, y = NULL)
+```
+
+The label helpers:
+
+```{r}
+#| eval: false
+label_number(scale = 1e-6, suffix = "M")    # 5000000 -> "5M"
+label_percent(accuracy = 0.1)                # 0.123 -> "12.3%"
+label_comma()                                # 1000000 -> "1,000,000"
+label_dollar()                               # 1234 -> "$1,234"
+label_date()                                 # date formatting
+label_log()                                  # log scale labels
+```
+
+## 8. Accessibility
+
+```{r}
+library(colorspace)
+
+# Simulate three common color vision deficiencies
+deutan(c("red", "green", "blue"))   # deuteranopia (red-green, most common)
+protan(c("red", "green", "blue"))   # protanopia (red-green)
+tritan(c("red", "green", "blue"))   # tritanopia (blue-yellow, rare)
+```
+
+What does my plot look like to someone with deuteranopia?
+
+```{r}
+#| fig-height: 3.5
+# A bad-on-purpose plot using close reds and greens
+bad_df <- tibble(
+  x = rep(1:10, 4),
+  y = c(1:10, 2:11, 3:12, 4:13),
+  g = rep(c("Apples", "Pears", "Plums", "Grapes"), each = 10)
+)
+
+bad_p <- ggplot(bad_df, aes(x, y, color = g)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(values = c("red", "darkred", "orange", "green")) +
+  labs(title = "Original (problematic colors)")
+
+# Same plot through deuteranope simulation
+bad_p_deutan <- ggplot(bad_df, aes(x, y, color = g)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(values = deutan(c("red", "darkred", "orange", "green"))) +
+  labs(title = "What a deuteranope sees")
+
+bad_p + bad_p_deutan
+```
+
+The fix, redundant encoding. Don't rely on color alone:
+
+```{r}
+#| fig-height: 3.5
+# Color + linetype + shape: survives grayscale, colorblindness, low contrast
+ggplot(life_exp, aes(year, life_exp,
+                     color = country, linetype = country, shape = country)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_color_viridis_d(end = 0.85) +
+  labs(title = "Color + linetype + shape, three ways to tell groups apart",
+       x = NULL, y = "Years")
+```
+
+**The test:** print your figure in grayscale. Can you still read it?
+
+For Quarto/HTML output, add alt text:
+
+````markdown
+```{{r}}
+#| label: fig-life-exp
+#| fig-cap: "Life expectancy in three countries, 1990–2020"
+#| fig-alt: "Line chart showing life expectancy rising in Brazil
+#|   and India and plateauing in the US between 1990 and 2020."
+ggplot(life_exp, ...) + ...
+```
+````
+
+Alt text should describe the **takeaway**, not the chart type. A screen-reader user needs "life expectancy plateaued in the US", not "a line chart with three colored lines."
+
+## 9. Faceting: small multiples
+
+```{r}
+#| fig-height: 3.5
+life_exp |>
+  ggplot(aes(year, life_exp)) +
+  geom_line(linewidth = 1, color = "#2c5f2d") +
+  geom_point(size = 2, color = "#2c5f2d") +
+  facet_wrap(~ country) +
+  scale_y_continuous(limits = c(55, 80)) +
+  labs(title = "Same data, faceted instead of color-coded",
+       x = NULL, y = "Years")
+```
+
+```{r}
+#| eval: false
+# facet_grid for crossing two variables
+ggplot(df, aes(x, y)) + geom_point() + facet_grid(year ~ region)
+
+# Free y-scales when ranges differ a lot
+ggplot(df, aes(x, y)) + geom_line() + facet_wrap(~ region, scales = "free_y")
+
+# Better facet labels
+ggplot(df, aes(x, y)) + geom_line() + facet_wrap(~ region, labeller = label_both)
+```
+
+## 10. Maps with `sf`
+
+A map is a data frame with a `geometry` column. Once you accept that, the rest is just ggplot.
+
+```{r}
+#| eval: false
+library(sf)
+library(tigris)
+library(dplyr)
+
+# Always cache shapefiles: they're large
+options(tigris_use_cache = TRUE)
+
+# Get state geometry (cb = TRUE for cartographic boundaries: smaller files)
+us_states <- states(cb = TRUE, year = 2024, resolution = "20m")
+
+# Inspect: it's just a data frame with a special geometry column
+glimpse(us_states)
+```
+
+A minimal choropleth:
+
+```{r}
+#| eval: false
+# Make some data to join
+my_data <- tibble(
+  state_abbr = state.abb,
+  value      = runif(50, 0, 100)
+)
+
+states_with_data <- us_states |>
+  left_join(my_data, by = c("STUSPS" = "state_abbr"))
+
+ggplot(states_with_data) +
+  geom_sf(aes(fill = value), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c() +
+  labs(title = "US states, example choropleth") +
+  theme_void()
+```
+
+### Projections
+
+Default unprojected lon/lat coordinates produce a "stretched" US map.
+
+```{r}
+#| eval: false
+# Default: looks stretched
+ggplot(us_states) + geom_sf()
+
+# Albers Equal Area: the right projection for continental US
+ggplot(us_states) +
+  geom_sf() +
+  coord_sf(crs = "EPSG:5070")
+
+# Shift Alaska and Hawaii to fit on a national map
+library(tigris)
+us_states |>
+  shift_geometry() |>
+  ggplot() +
+  geom_sf() +
+  coord_sf(crs = "EPSG:5070")
+```
+
+Picking a projection for somewhere other than the US:
+
+```{r}
+#| eval: false
+library(crsuggest)
+suggest_crs(my_sf_object)   # suggests appropriate projected CRSs
+```
+
+### Faceted comparison map
+
+```{r}
+#| eval: false
+# Compare two states' counties side by side
+two_states <- counties(state = c("WV", "OH"), cb = TRUE, year = 2024) |>
+  left_join(my_county_data, by = "GEOID")
+
+ggplot(two_states) +
+  geom_sf(aes(fill = food_insecurity_rate), color = "white", linewidth = 0.1) +
+  scale_fill_viridis_c(option = "D", labels = scales::label_percent()) +
+  facet_wrap(~ STATE_NAME) +                  # coord_sf() forbids scales = "free"
+  labs(title = "Food insecurity by county",
+       subtitle = "Ohio vs West Virginia, 2021",
+       fill     = NULL) +
+  theme_void(base_size = 12) +
+  theme(strip.text = element_text(face = "bold", size = 13))
+```
+
+### Map polish
+
+```{r}
+#| eval: false
+library(ggspatial)   # scale bars and north arrows for ggplot
+library(ggrepel)     # non-overlapping labels
+
+ggplot(my_map) +
+  geom_sf(aes(fill = value), color = "white", linewidth = 0.1) +
+
+  # Right scale type for the data
+  scale_fill_distiller(palette = "RdBu", direction = -1, labels = label_percent()) +
+
+  # Direct labels for the regions
+  geom_sf_text(aes(label = NAME), size = 3, color = "grey20") +
+
+  # Drop axes: they're noise on a choropleth
+  theme_void(base_size = 12) +
+
+  # Optional: scale bar / north arrow when precision matters
+  annotation_scale(location = "br") +
+  annotation_north_arrow(location = "tr", style = north_arrow_minimal()) +
+
+  # Always caption your data source
+  labs(title    = "My map title",
+       caption  = "Source: USDA AMS, 2024",
+       fill     = NULL)
+```
+
+## 11. Combining plots: `patchwork`
+
+```{r}
+#| fig-height: 3
+p_left <- ggplot(life_exp, aes(year, life_exp, color = country)) +
+  geom_line(linewidth = 1) +
+  scale_color_viridis_d(end = 0.85) +
+  labs(title = "Trend", x = NULL, y = "Years")
+
+p_right <- ggplot(life_exp |> filter(year == 2020),
+                  aes(reorder(country, life_exp), life_exp, fill = country)) +
+  geom_col() +
+  scale_fill_viridis_d(end = 0.85, guide = "none") +
+  labs(title = "2020 snapshot", x = NULL, y = "Years")
+
+p_left + p_right
+```
+
+The operators:
+
+```{r}
+#| eval: false
+p1 + p2                           # side by side
+p1 / p2                           # stacked
+(p1 + p2) / p3                    # nested layout
+p1 | p2 | p3                      # also side by side, explicit
+
+# Shared title + auto-labels
+(p1 + p2) +
+  plot_annotation(title = "Shared title",
+                  tag_levels = "A")
+
+# Collect duplicated legends
+(p1 + p2) + plot_layout(guides = "collect")
+```
+
+You'll see `gridExtra::grid.arrange()` in older code. `patchwork` is the modern default, cleaner syntax and better alignment.
+
+## 12. Exporting
+
+```{r}
+#| eval: false
+# PNG: use the ragg device (faster, better fonts, cross-platform consistent)
+ggsave(
+  filename = "fig-1.png",
+  plot     = p,
+  width    = 7, height = 4,   # build at FINAL display size
+  units    = "in",
+  dpi      = 300,             # 300 for print, 150 for screen
+  device   = ragg::agg_png    # the modern recommendation
+)
+
+# PDF: use cairo_pdf to embed fonts properly
+ggsave("fig-1.pdf", p,
+       width = 7, height = 4, units = "in",
+       device = cairo_pdf)
+
+# SVG: for scalable vector (web, Adobe Illustrator)
+ggsave("fig-1.svg", p, width = 7, height = 4, units = "in")
+```
+
+**Pitfalls to avoid:**
+
+- Resizing in Word/PowerPoint after export → text gets warped. Set size in `ggsave`.
+- Fonts substituting in PDF → use `device = cairo_pdf`.
+- "Different output on different OS" → `ragg` minimizes this.
+
+## 13. Reproducibility
+
+A minimal reproducible setup:
+
+```{r}
+#| eval: false
+# Top of every analysis script
+library(here)
+library(tidyverse)
+library(sf)
+
+set.seed(42)
+
+# Paths via here(): work no matter where the script is run from.
+# Replace "my-data.csv" with your actual file in data/raw/.
+data <- read_csv(here("data", "raw", "my-data.csv"))
+
+# ... your analysis ...
+
+# At the bottom
+sessionInfo()
+```
+
+In the terminal, once per project:
+
+```{r}
+#| eval: false
+renv::init()       # set up renv
+renv::snapshot()   # lock current package versions to renv.lock
+```
+
+**If you can't hand your project to a stranger and have it run in 10 minutes, it's not done.**
+
+## 14. Beyond static
+
+```{r}
+#| eval: false
+# Quickest path to interactive: wraps any ggplot
+library(plotly)
+ggplotly(p)
+```
+
+```{r}
+#| eval: false
+# Interactive web maps
+library(leaflet)
+leaflet(my_sf_data) |>
+  addTiles() |>
+  addPolygons(fillColor = ~viridis::viridis(10)[as.numeric(cut(value, 10))],
+              fillOpacity = 0.7)
+```
+
+```{r}
+#| eval: false
+# tmap is an alternative to ggplot for maps (v4 in 2025)
+# Switches between static "plot" and interactive "view" modes
+library(tmap)
+tmap_mode("plot")
+tm_shape(my_sf) + tm_polygons(fill = "value")
+```
+
+**Caveat:** interactive ≠ better. For a printed report or PDF, static is correct.
+
+## 15. Common pitfalls
+
+**Misleading visualizations to avoid:**
+
+- Truncated y-axis on bar charts
+- Dual y-axes
+- Pie charts beyond 3 slices
+- 3D anything
+- Rainbow / jet colormaps (perceptually non-uniform; fail under colorblindness)
+- Encoding ordering in hue alone
+
+**Portability:**
+
+- Hardcoded paths (`/Users/me/...`): use `here::here()`
+- `setwd()` anywhere in code: use RStudio projects
+- Random seeds not set: `set.seed(42)` whenever randomness is involved
+- No `sessionInfo()`: add at bottom of every analysis file
+
+## 16. Capstone: assemble a shareable figure
+
+Nothing new here. Every piece came from an earlier section: tidy data,
+a deliberate palette, the house theme, small multiples via `patchwork`,
+a controlled export. Communication is *assembly*, choose the views that
+answer the reader's question, then make the result stand on its own.
+The full worked example, a US-states variant with a tigris map, is in
+`demos/21-infographic.R`.
+
+```{r}
+#| fig-height: 4.5
+# Reuse the two plots built in section 11
+figure <- (p_left) / (p_right) +
+  plot_layout(heights = c(1.4, 1)) +
+  plot_annotation(
+    title    = "Three decades of gains in life expectancy",
+    subtitle = "A worked example: one tidy table, complementary views",
+    caption  = "Illustrative data · Built in R with ggplot2 + patchwork"
+  )
+figure
+```
+
+Then export it once, at a fixed size and DPI, so it looks identical in a
+slide, a PDF, and the web:
+
+```{r}
+#| eval: false
+ggsave(
+  here("figures", "capstone-infographic.png"),
+  plot = figure, device = ragg::agg_png,
+  width = 9, height = 7.5, units = "in", dpi = 300, bg = "white"
+)
+```
+
+## Resources
+
+**Books**
+
+- [R for Data Science (2e)](https://r4ds.hadley.nz/)
+- [ggplot2: Elegant Graphics for Data Analysis (3e)](https://ggplot2-book.org/)
+- [Geocomputation with R](https://r.geocompx.org/)
+- [Analyzing US Census Data](https://walker-data.com/census-r/)
+- [Modern Data Visualization with R](https://rkabacoff.github.io/datavis/)
+
+**Galleries**
+
+- [R Graph Gallery](https://r-graph-gallery.com/)
+- [ggplot2 extensions](https://exts.ggplot2.tidyverse.org/gallery/)
+
+**Accessibility**
+
+- [Color Universal Design (Okabe & Ito)](https://jfly.uni-koeln.de/color/)
+- [WCAG 2.1 quick reference](https://www.w3.org/WAI/WCAG21/quickref/)
+
+**Quarto**
+
+- [Quarto Guide](https://quarto.org/docs/guide/)
+
+## Session info
+
+```{r}
+sessionInfo()
+```

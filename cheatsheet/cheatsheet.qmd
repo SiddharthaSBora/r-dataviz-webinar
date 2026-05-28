@@ -1,0 +1,158 @@
+---
+title: "ggplot2 & friends, one-page cheatsheet"
+format:
+  html:
+    page-layout: full
+    toc: false
+    theme: cosmo
+    fontsize: 0.9em
+---
+
+::: {.columns}
+::: {.column width="33%"}
+
+### The grammar
+
+```r
+ggplot(data, aes(x, y)) +   # data + mapping
+  geom_*() +                # what to draw
+  scale_*() +               # how aes maps to visuals
+  facet_*() +               # small multiples
+  coord_*() +               # coordinate system
+  labs() + theme_*()        # labels + look
+```
+
+Each `+` adds a **layer**. Plots are objects: save with `p <- ...`,
+extend later with `p + ...`.
+
+### Common geoms
+
+```r
+geom_point()    geom_line()
+geom_col()      geom_bar()
+geom_histogram() geom_boxplot()
+geom_smooth()   geom_tile()
+geom_sf()       geom_text() / geom_label()
+```
+
+### Tidy first
+
+```r
+# wide -> long (what ggplot wants)
+pivot_longer(df, -id,
+  names_to = "key",
+  values_to = "value")
+
+# long -> wide
+pivot_wider(df,
+  names_from = key,
+  values_from = value)
+```
+
+:::
+::: {.column width="33%"}
+
+### Color, deliberately
+
+```r
+# colorblind-safe, continuous
+scale_color_viridis_c()
+scale_fill_viridis_c()
+
+# colorblind-safe, discrete
+scale_color_viridis_d(end = .85)
+
+# manual (exact control)
+scale_color_manual(values = okabe_ito)
+```
+
+**Avoid** rainbow/jet colormaps. Encode order in lightness, not hue.
+
+### Facets
+
+```r
+facet_wrap(~var)              # one var
+facet_grid(rows ~ cols)       # two vars
+facet_wrap(~var,
+  scales = "free_y")          # independent scales
+```
+
+### Accessibility
+
+- Pair color with a 2nd channel: `linetype=`, `shape=`.
+- Test with `colorspace::deutan(plot)`.
+- Add alt text in Quarto: `#| fig-alt: "..."`.
+- Survives grayscale = survives most CVD.
+
+### Number formatting (`scales`)
+
+```r
+scale_y_continuous(
+  labels = label_comma())      # 1,000,000
+label_dollar()   label_percent()
+label_number(accuracy = 0.1)
+```
+
+:::
+::: {.column width="33%"}
+
+### Maps (`sf`)
+
+```r
+library(sf); library(tigris)
+options(tigris_use_cache = TRUE)
+
+geo <- counties("WV", cb = TRUE)
+ggplot(geo) + geom_sf()
+
+# right projection for the lower 48
+coord_sf(crs = 5070)          # Albers
+```
+
+Choropleth: join data, map to `fill`.
+`tidycensus` attaches geometry to ACS data.
+
+### Combine (`patchwork`)
+
+```r
+p1 + p2          # side by side
+p1 / p2          # stacked
+(p1 + p2) / p3   # nested
+... + plot_layout(guides = "collect")
+... + plot_annotation(tag_levels = "A")
+```
+
+### Export
+
+```r
+ggsave("fig.png", plot = p,
+  device = ragg::agg_png,
+  width = 7, height = 4.5,
+  units = "in", dpi = 300,
+  bg = "white")
+# cairo_pdf for vector + fonts
+```
+
+### Reproducibility
+
+```r
+library(here)        # sane paths
+set.seed(42)         # if random
+read_csv(here("data", "x.csv"))
+sessionInfo()        # at the bottom
+```
+
+### Interactive (when web-bound)
+
+```r
+plotly::ggplotly(p)  # one-line
+leaflet::leaflet()   # tile maps
+```
+
+:::
+:::
+
+::: {style="text-align:center; color:#777; font-size:0.8em; margin-top:1em;"}
+Rule of thumb: **interactive for exploration, static for explanation.** ·
+github.com/SiddharthaSBora/r-dataviz-webinar
+:::

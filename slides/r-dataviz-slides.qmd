@@ -1,0 +1,1719 @@
+---
+title: "Data Visualization in R"
+subtitle: "From data to publication-ready static figures"
+author: "Siddhartha Bora · West Virginia University"
+date: "May 28, 2026"
+date-format: long
+format:
+  revealjs:
+    theme: [default, custom.scss]
+    slide-number: c/t
+    show-slide-number: all
+    chalkboard: false
+    incremental: false
+    smaller: false
+    scrollable: true
+    code-line-numbers: false
+    code-overflow: wrap
+    embed-resources: true
+    fig-align: center
+    fig-width: 8
+    fig-height: 4.5
+    fig-dpi: 150
+# Note: to get a printable PDF, render to revealjs HTML and open with
+# `?print-pdf` appended to the URL, then use the browser's print dialog.
+# See https://quarto.org/docs/presentations/revealjs/presenting.html#print-to-pdf
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: false
+  fig-format: png
+  dev: ragg_png
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    fig.retina: 2
+---
+
+```{r setup}
+#| include: false
+# Centralized library loads and theme so every chunk inherits them.
+# Install dependencies (one time):
+#   install.packages(c("tidyverse", "scales", "patchwork", "colorspace",
+#                      "sf", "tigris", "ggspatial", "ggrepel",
+#                      "ragg", "here", "gapminder"))
+
+library(here)
+# Quarto renders from slides/, so R never sees the project-root .Renviron
+# (it only checks the working dir then ~/.Renviron). Load it explicitly so the
+# Census API key used by demo 19 comes from the project, not a stale ~/.Renviron.
+readRenviron(here(".Renviron"))
+
+library(tidyverse)
+library(scales)
+library(patchwork)
+library(colorspace)
+# Note: scale_*_viridis_d() / _c() are built into ggplot2 since 3.0.0,
+# so no need to load the viridis package separately.
+# sf / tigris / ggspatial are loaded only inside map chunks
+# so the deck can render even if those are missing.
+
+# Shared helpers (theme_webinar(), okabe_ito(), life_exp_sample())
+source(here("R", "helpers.R"))
+
+# Project-wide theme: set once, inherited by every chunk
+theme_set(theme_webinar())
+
+# Reproducibility seed for any rng-touching chunks.
+set.seed(42)
+```
+
+# Welcome {.center background-color="#1a3a2e"}
+
+## Follow along {background-color="#1a3a2e"}
+
+::: {.columns}
+::: {.column width="60%"}
+All materials live here:
+
+[**github.com/SiddharthaSBora/r-dataviz-webinar**](https://github.com/SiddharthaSBora/r-dataviz-webinar)
+
+::: {.incremental}
+- 📊 Slide deck: `slides/`
+- 💻 Live-coding companion: `live-coding/`
+- 📋 One-page cheatsheet: `cheatsheet/`
+- 🧪 21 standalone demo scripts: `demos/`
+:::
+:::
+
+::: {.column width="40%"}
+*Open the repo now if you want to run code along with the talk.*
+
+`git clone https://github.com/SiddharthaSBora/r-dataviz-webinar`
+:::
+:::
+
+## What this hour gives you {.smaller}
+
+Three concrete things you'll leave with:
+
+::: {.incremental}
+- **A workflow** for going from raw data to a polished static figure in R
+- **The reasoning** behind design choices: color, type, layout, accessibility
+- **A working knowledge of maps in R**: the part most people find hardest
+:::
+
+::: {.fragment .fade-in}
+This is a general R dataviz talk. The map content suits anyone doing regional comparisons, and the principles apply generally.
+:::
+
+## Two things before we start {.smaller}
+
+::: {.incremental}
+- **I'm just another R user.** I use these tools day to day and I'm sharing what works for me.
+- **This is opinionated.** There are many ways to do everything here. These are choices, not rules, take what's useful and leave the rest.
+:::
+
+## A note on editors {.smaller}
+
+None of this depends on your editor, the code is identical everywhere.
+
+::: {.incremental}
+- **RStudio** — what I use, and what you'll see today. The classic R IDE.
+- **VS Code** — I use it too; solid with the R extension if you already live there.
+- **Positron** — Posit's newer IDE, a VS Code–based successor to RStudio. Many people are making the switch.
+:::
+
+::: {.fragment .fade-in}
+Pick whatever keeps you productive, everything here runs the same in all three. With that, let's get into it.
+:::
+
+# Part 0: How to think about data viz {background-color="#1a3a2e"}
+
+::: aside
+This section follows the arc of *R for Data Science (2e)*, chapters 1–11, free at [r4ds.hadley.nz](https://r4ds.hadley.nz/)
+:::
+
+## The data science "whole game" {.smaller}
+
+```{=html}
+<div style="display:flex; justify-content:center; margin-top:0.5em;">
+<svg viewBox="0 0 920 340" xmlns="http://www.w3.org/2000/svg" style="max-width:100%; height:auto; font-family:'Source Sans Pro',sans-serif;">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2c5f2d"/>
+    </marker>
+  </defs>
+
+  <!-- Import -->
+  <rect x="20" y="150" width="110" height="44" rx="6" fill="#1a3a2e"/>
+  <text x="75" y="177" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">Import</text>
+
+  <!-- Tidy -->
+  <rect x="170" y="150" width="110" height="44" rx="6" fill="#2c5f2d"/>
+  <text x="225" y="177" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">Tidy</text>
+
+  <!-- Understand box (dashed) containing Transform / Visualize / Model -->
+  <rect x="330" y="60" width="300" height="230" rx="10" fill="none" stroke="#97bc62" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="480" y="50" text-anchor="middle" fill="#6a6a6a" font-size="15" font-style="italic">Understand</text>
+
+  <rect x="370" y="80" width="220" height="40" rx="6" fill="#97bc62"/>
+  <text x="480" y="106" text-anchor="middle" fill="#1a3a2e" font-size="17" font-weight="700">Transform</text>
+
+  <rect x="370" y="155" width="220" height="40" rx="6" fill="#97bc62"/>
+  <text x="480" y="181" text-anchor="middle" fill="#1a3a2e" font-size="17" font-weight="700">Visualize</text>
+
+  <rect x="370" y="230" width="220" height="40" rx="6" fill="#97bc62"/>
+  <text x="480" y="256" text-anchor="middle" fill="#1a3a2e" font-size="17" font-weight="700">Model</text>
+
+  <!-- internal loop arrows between the three -->
+  <line x1="480" y1="120" x2="480" y2="153" stroke="#2c5f2d" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="480" y1="195" x2="480" y2="228" stroke="#2c5f2d" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="430" y1="230" x2="430" y2="122" stroke="#2c5f2d" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Communicate -->
+  <rect x="700" y="150" width="130" height="44" rx="6" fill="#1a3a2e"/>
+  <text x="765" y="177" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">Communicate</text>
+
+  <!-- main flow arrows -->
+  <line x1="130" y1="172" x2="166" y2="172" stroke="#2c5f2d" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="280" y1="172" x2="326" y2="172" stroke="#2c5f2d" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="634" y1="172" x2="696" y2="172" stroke="#2c5f2d" stroke-width="2.5" marker-end="url(#arrow)"/>
+</svg>
+</div>
+```
+
+::: {.fragment}
+Today we live in the middle: **Tidy → Transform → Visualize → Communicate**, the visual half of the cycle.
+:::
+
+::: aside
+Diagram after Wickham, Çetinkaya-Rundel & Grolemund, *R for Data Science (2e)*, Introduction.
+:::
+
+## Why visualize *first*? {.smaller}
+
+::: {.columns}
+::: {.column width="55%"}
+R4DS teaches `ggplot` in **chapter 1**, before any data wrangling.
+
+Visualization is how you *understand* data, as much as how you present it.
+
+::: {.fragment}
+**Anscombe's quartet**, four datasets with nearly identical means, variances, and correlations…
+:::
+:::
+
+::: {.column width="45%"}
+```{r}
+#| echo: false
+#| fig-height: 4
+library(tidyr)
+
+anscombe_tidy <- anscombe |>
+  pivot_longer(everything(),
+               names_to = c(".value", "set"),
+               names_pattern = "(.)(.)") |>
+  mutate(set = paste0("Set ", set))
+
+ggplot(anscombe_tidy, aes(x, y)) +
+  geom_point(color = "#2c5f2d", size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "#97bc62", linewidth = 0.8) +
+  facet_wrap(~ set) +
+  labs(x = NULL, y = NULL) +
+  theme(strip.text = element_text(face = "bold"))
+```
+:::
+:::
+
+::: {.fragment}
+…yet they look **completely different**. Summary statistics can mislead; pictures don't. **Plot early, plot often.**
+:::
+
+## Tidy data: the foundation {.smaller}
+
+::: {.columns}
+::: {.column width="55%"}
+Three rules *(R4DS Ch. 5)*:
+
+::: {.incremental}
+1. Each **variable** is a column
+2. Each **observation** is a row
+3. Each **value** is a cell
+:::
+
+::: {.fragment}
+Tidy data is what lets every downstream step (transform, plot, model) work with the same tools.
+:::
+:::
+
+::: {.column width="45%"}
+::: {.fragment}
+```{r}
+#| echo: false
+#| fig-height: 3.6
+grid <- expand.grid(col = 1:3, row = 1:4)
+ggplot(grid, aes(col, -row)) +
+  geom_tile(fill = "#97bc62", color = "white", linewidth = 2) +
+  annotate("text", x = 2, y = -0.3, label = "← variables (columns)",
+           size = 4, color = "#1a3a2e", fontface = "italic") +
+  annotate("text", x = 0.2, y = -2.5, label = "observations\n(rows) ↓",
+           size = 4, color = "#1a3a2e", fontface = "italic", hjust = 1) +
+  coord_cartesian(xlim = c(-1.2, 3.7), clip = "off") +
+  theme_void()
+```
+:::
+:::
+:::
+
+> "Tidy datasets are all alike; every messy dataset is messy in its own way." (Wickham)
+
+## Data wrangling: the real work {.smaller}
+
+Before any plot, the data has to be **tidy**. In practice, getting it there is the **biggest challenge**, often most of the work.
+
+::: {.columns}
+::: {.column width="55%"}
+The everyday verbs *(R4DS Ch. 3 & 5)*:
+
+::: {.incremental}
+- **`filter()`** — keep rows
+- **`select()`** — keep columns
+- **`mutate()`** — add / change columns
+- **`group_by()` + `summarise()`** — aggregate
+- **`pivot_longer()` / `pivot_wider()`** — reshape
+- **`*_join()`** — combine tables
+:::
+:::
+
+::: {.column width="45%"}
+::: {.fragment}
+**Real data is messy:**
+
+- Values stored in column names
+- One cell holding two variables
+- Dates and numbers stored as text
+- Missing values, inconsistent labels
+- Several tables that must be joined
+:::
+:::
+:::
+
+::: {.fragment}
+We won't go deep today, it's a topic of its own. Just know: **if a plot feels hard, the fix is usually upstream, in the data.**
+:::
+
+::: aside
+A whole subject in itself, see *R for Data Science (2e)*, chapters 3 (transform) and 5 (tidy).
+:::
+
+## The grammar of graphics {.smaller}
+
+A plot is built from independent **layers** *(R4DS Ch. 1 & 9)*:
+
+```{=html}
+<div style="display:flex; justify-content:center; margin-top:0.3em;">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" style="max-width:100%; height:auto; font-family:'Source Sans Pro',sans-serif;">
+  <g>
+    <rect x="40"  y="40" width="180" height="46" rx="6" fill="#1a3a2e"/>
+    <text x="130" y="69" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">data</text>
+    <text x="240" y="69" text-anchor="middle" fill="#2c5f2d" font-size="26" font-weight="700">+</text>
+
+    <rect x="270" y="40" width="220" height="46" rx="6" fill="#2c5f2d"/>
+    <text x="380" y="69" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">aesthetic mapping</text>
+    <text x="510" y="69" text-anchor="middle" fill="#2c5f2d" font-size="26" font-weight="700">+</text>
+
+    <rect x="540" y="40" width="180" height="46" rx="6" fill="#97bc62"/>
+    <text x="630" y="69" text-anchor="middle" fill="#1a3a2e" font-size="17" font-weight="700">geom</text>
+  </g>
+
+  <text x="130" y="115" text-anchor="middle" fill="#6a6a6a" font-size="13">the table</text>
+  <text x="380" y="115" text-anchor="middle" fill="#6a6a6a" font-size="13">columns to visual channels</text>
+  <text x="630" y="115" text-anchor="middle" fill="#6a6a6a" font-size="13">how rows are drawn</text>
+
+  <text x="380" y="165" text-anchor="middle" fill="#1a3a2e" font-size="17" font-weight="700">… then optional layers:</text>
+
+  <g font-size="15">
+    <rect x="90"  y="190" width="120" height="38" rx="6" fill="#eef3e6" stroke="#97bc62"/>
+    <text x="150" y="214" text-anchor="middle" fill="#1a3a2e">scales</text>
+    <rect x="230" y="190" width="120" height="38" rx="6" fill="#eef3e6" stroke="#97bc62"/>
+    <text x="290" y="214" text-anchor="middle" fill="#1a3a2e">facets</text>
+    <rect x="370" y="190" width="120" height="38" rx="6" fill="#eef3e6" stroke="#97bc62"/>
+    <text x="430" y="214" text-anchor="middle" fill="#1a3a2e">coords</text>
+    <rect x="510" y="190" width="120" height="38" rx="6" fill="#eef3e6" stroke="#97bc62"/>
+    <text x="570" y="214" text-anchor="middle" fill="#1a3a2e">theme</text>
+  </g>
+</svg>
+</div>
+```
+
+::: {.fragment}
+This *is* how `ggplot2` works. Learn the grammar once; every plot is a recombination of these pieces.
+:::
+
+## Aesthetic mappings & how we read them {.smaller}
+
+::: {.columns}
+::: {.column width="50%"}
+**Mapping** = assigning a data variable to a visual channel:
+
+- `x`, `y` → **position**
+- `color`, `fill` → hue
+- `shape`, `linetype` → form
+- `size` → area
+
+*(R4DS Ch. 1 & 9)*
+:::
+
+::: {.column width="50%"}
+::: {.fragment}
+**But we don't read all channels equally well.**
+
+Accuracy of human perception, best → worst:
+
+1. Position along a scale
+2. Length
+3. Angle / slope
+4. Area
+5. Color / shade / density
+:::
+:::
+:::
+
+::: {.fragment}
+This is *why* bar charts beat pie charts, and why color should carry **categories or emphasis**, not precise quantities.
+:::
+
+::: aside
+Cleveland & McGill (1984), graphical perception. Echoed throughout R4DS Ch. 9–11.
+:::
+
+## Exploratory data analysis (EDA) {.smaller}
+
+EDA is a **mindset**, not a checklist *(R4DS Ch. 10)*:
+
+::: {.incremental}
+- Generate questions about your data
+- Search for answers by visualizing, transforming, and modeling
+- Use what you learn to refine the questions: and repeat
+:::
+
+::: {.fragment}
+Two questions drive most of it:
+
+- What type of **variation** occurs within my variables?
+- What type of **covariation** occurs between my variables?
+:::
+
+::: {.fragment}
+> "EDA is not a formal process with a strict set of rules… it is a state of mind." (R4DS)
+
+The plots you make *for yourself* (fast, ugly, many) differ from the ones you make *for others* (slow, polished, few).
+:::
+
+## Communication {.smaller}
+
+The shift from **exploratory** (for you) to **explanatory** (for others) *(R4DS Ch. 11)*:
+
+::: {.columns}
+::: {.column width="50%"}
+**Exploratory plot**
+
+- Default labels
+- Default colors
+- Made in seconds
+- Audience: you
+:::
+
+::: {.column width="50%"}
+::: {.fragment}
+**Explanatory plot**
+
+- Informative title + subtitle
+- Deliberate color
+- Annotations, source caption
+- Audience: everyone else
+:::
+:::
+:::
+
+::: {.fragment}
+A figure that communicates needs more than the ggplot default. Most of today's hands-on portion is this transformation, **layer by layer**.
+:::
+
+## Workflow & reproducibility {.smaller}
+
+R4DS interleaves "workflow" chapters *(Ch. 2, 4, 6, 8)*. The craft around the code matters as much as the code:
+
+::: {.incremental}
+- **Projects, not `setwd()`** *(Ch. 6)*: your analysis should run on anyone's machine
+- **Readable code style** *(Ch. 4)*: code is read far more often than written
+- **Knowing how to get help** *(Ch. 8)*: reprexes, documentation, the community
+- **Scripts you can re-run**: reproducibility built in from the start
+:::
+
+::: {.fragment}
+That's why this webinar ships as an **R project**, not loose scripts.
+:::
+
+## Why R + the tidyverse {.smaller}
+
+The handoff to the hands-on portion:
+
+::: {.incremental}
+- The **grammar of graphics** is literally how `ggplot2` is built
+- The **tidyverse** is one coherent toolkit for the whole game: import, tidy, transform, visualize, communicate
+- **Reproducible**: scriptable, version-controllable, re-runnable
+- **Publication-quality** static output, and it's **free**
+:::
+
+::: {.fragment}
+We've covered the *what* and the *why*.
+
+**Now the *how*.**
+:::
+
+# Demos 1–2 · Data first {background-color="#1a3a2e"}
+
+## Demo 1: Tidy data {.smaller}
+
+`▶ demos/01-tidy-data.R`
+
+```{r}
+#| echo: false
+#| fig-height: 2.2
+
+library(tibble)
+
+untidy <- tibble(
+  student = c(1, 2, 3),
+  english = c(70, 78, 82),
+  math    = c(87, 65, 91),
+  science = c(100, 83, 88)
+)
+
+tidy <- tibble(
+  student = rep(1:3, each = 3),
+  subject = rep(c("english","math","science"), 3),
+  score   = c(70,87,100, 78,65,83, 82,91,88)
+)
+```
+
+::: {.columns}
+::: {.column width="48%"}
+**Untidy**, subjects in columns (3 rows)
+```{r}
+#| echo: false
+knitr::kable(untidy)
+```
+:::
+
+::: {.column width="48%"}
+**Tidy**, one row per (student, subject) (9 rows)
+```{r}
+#| echo: false
+knitr::kable(tidy)
+```
+:::
+:::
+
+::: {.fragment}
+**The rules** (Wickham 2014):
+
+1. Each **variable** is a column
+2. Each **observation** is a row
+3. Each **value** is a cell
+:::
+
+::: {.fragment .fade-in}
+**Why we care:** `ggplot2` is *designed* for tidy data. Long form unlocks aesthetic mappings like `color = subject`.
+:::
+
+## Demo 2: Long vs wide {.smaller}
+
+`▶ demos/02-long-vs-wide.R`
+
+The same data, two shapes:
+
+```{r}
+library(tidyr)
+
+scores_wide <- tibble(
+  student = c(1, 2, 3),
+  english = c(70, 78, 82),
+  math    = c(87, 65, 91),
+  science = c(100, 83, 88)
+)
+
+# WIDE -> LONG
+scores_long <- scores_wide |>
+  pivot_longer(
+    cols      = -student,
+    names_to  = "subject",
+    values_to = "score"
+  )
+
+scores_long
+```
+
+## The reverse direction
+
+```{r}
+# LONG -> WIDE
+scores_long |>
+  pivot_wider(names_from = subject, values_from = score)
+```
+
+**Rule of thumb:**
+
+- Storing, analyzing, plotting → **long**
+- Final summary table for a human reader → **wide**
+
+> "If your plot feels hard, your data is probably wide."
+
+# Demo 3 · The grammar of graphics {background-color="#1a3a2e"}
+
+## In one sentence
+
+`▶ demos/03-first-ggplot.R`
+
+> Map data variables to visual properties (aesthetics) and pick a geometric object (geom) to represent each row.
+
+::: {.fragment}
+Every ggplot has three things:
+:::
+
+::: {.fragment}
+``` r
+ggplot(data = <DATA>) +
+  aes(x = <VAR>, y = <VAR>, color = <VAR>) +
+  geom_<TYPE>()
+```
+:::
+
+::: {.fragment}
+- **`data`**: a data frame
+- **`aes()`**: mapping from variables to visual properties
+- **`geom_*()`**: the visual representation (line, point, bar, polygon...)
+:::
+
+## Same data, different geom {.smaller}
+
+```{r}
+#| fig-height: 3.5
+p_base <- ggplot(economics, aes(x = date, y = unemploy / 1000))
+
+p_line  <- p_base + geom_line()  + labs(title = "geom_line",  x = NULL, y = "Million")
+p_area  <- p_base + geom_area(fill = "#2c5f2d", alpha = 0.6) + labs(title = "geom_area",  x = NULL, y = "Million")
+p_point <- p_base + geom_point(alpha = 0.3, size = 0.8) + labs(title = "geom_point", x = NULL, y = "Million")
+p_step  <- p_base + geom_step() + labs(title = "geom_step",  x = NULL, y = "Million")
+
+(p_line | p_area) / (p_point | p_step)
+```
+
+**The data didn't move. The geom is a *choice* about how to represent it.**
+
+# Demo 4 · A worked example {background-color="#1a3a2e"}
+
+## The plan
+
+`▶ demos/04-layered-improvement.R`
+
+We'll take **one** plot from "default ggplot" to "publication ready" by adding **one layer at a time.**
+
+::: {.fragment}
+Sample data: life expectancy at birth in three countries, 1990–2020.
+:::
+
+```{r}
+life_exp <- life_exp_sample()
+life_exp
+```
+
+## Step 1: the crudest possible plot
+
+```{r}
+#| fig-height: 3.5
+p1 <- life_exp |>
+  ggplot(aes(x = year, y = life_exp, color = country)) +
+  geom_line()
+
+p1
+```
+
+::: {.fragment}
+Works. Looks bad. **That's the point**, every default ggplot looks like this.
+:::
+
+## Step 2: treat the plot as an object
+
+The single most powerful idea in ggplot:
+
+::: {.fragment}
+```{r}
+#| fig-height: 3
+p2 <- p1 +
+  labs(
+    title    = "Life expectancy at birth, 1990–2020",
+    subtitle = "Brazil, India, United States",
+    x        = NULL,
+    y        = "Years",
+    color    = NULL,
+    caption  = "Source: illustrative data"
+  )
+
+p2
+```
+:::
+
+::: {.fragment}
+**Each `+` is a layer.** You can save plots as objects, add to them later, and reuse them.
+:::
+
+## Step 3: thicker lines, end-point markers
+
+```{r}
+#| fig-height: 3.5
+# Note: linewidth, not size: ggplot 3.4.0 (2022) deprecated `size` for lines.
+p3 <- p2 +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5)
+
+p3
+```
+
+## Step 4: pick a deliberate color palette
+
+```{r}
+#| fig-height: 3.5
+# Viridis: perceptually uniform AND colorblind-safe.
+p4 <- p3 +
+  scale_color_viridis_d(option = "D", end = 0.85)
+
+p4
+```
+
+::: {.fragment}
+We'll come back to color choices in a moment.
+:::
+
+## Step 5: apply a clean theme
+
+```{r}
+#| fig-height: 3.5
+p5 <- p4 +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "grey40"),
+    legend.position  = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+p5
+```
+
+## Step 6: fix axis breaks and limits
+
+```{r}
+#| fig-height: 3.5
+p6 <- p5 +
+  scale_x_continuous(breaks = seq(1990, 2020, 10)) +
+  scale_y_continuous(limits = c(55, 80), labels = scales::label_number(suffix = " yr"))
+
+p6
+```
+
+## Before and after {.smaller}
+
+```{r}
+#| echo: false
+#| fig-height: 3.5
+p1_simple <- life_exp |>
+  ggplot(aes(x = year, y = life_exp, color = country)) +
+  geom_line() +
+  labs(title = "Step 1")
+
+p_final <- p6 + labs(title = "Step 6")
+
+p1_simple + p_final
+```
+
+**Six small, named layers. Each one does one thing.**
+
+> You didn't write a 50-line plotting function. You assembled a figure.
+
+# Demo 5 · Color, done deliberately {background-color="#1a3a2e"}
+
+## Three kinds of color scale {.smaller}
+
+`▶ demos/05-color-palettes.R`
+
+```{r}
+#| echo: false
+#| fig-height: 4
+
+library(scales)
+
+# Three demonstration data sets
+df_qual <- tibble(x = letters[1:6], y = c(3, 5, 2, 7, 4, 6))
+df_seq  <- tibble(x = 1:10, y = 1:10)
+df_div  <- tibble(x = -5:5, y = -5:5)
+
+p_qual <- ggplot(df_qual, aes(x, y, fill = x)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Qualitative", subtitle = "unordered categories, Set2") +
+  theme(legend.position = "none")
+
+p_seq <- ggplot(df_seq, aes(x, y = 1, fill = y)) +
+  geom_tile() +
+  geom_text(aes(label = y), color = "white", size = 3) +
+  scale_fill_viridis_c() +
+  labs(title = "Sequential", subtitle = "ordered, low → high, viridis") +
+  theme(legend.position = "none", axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+p_div <- ggplot(df_div, aes(x, y = 1, fill = x)) +
+  geom_tile() +
+  geom_text(aes(label = x), color = "grey20", size = 3) +
+  scale_fill_distiller(palette = "RdBu", limits = c(-5, 5)) +
+  labs(title = "Diverging", subtitle = "symmetric around midpoint, RdBu") +
+  theme(legend.position = "none", axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+p_qual / p_seq / p_div
+```
+
+**First pick the *type*, then the palette.** Diverging only when your data has a meaningful midpoint (zero, mean, baseline).
+
+## The palette functions you'll actually use
+
+| Type | Discrete | Continuous |
+|------|----------|------------|
+| Qualitative | `scale_*_brewer(palette = "Set2")` | — |
+| Qualitative (colorblind-safe) | `scale_*_viridis_d()`, Okabe-Ito | — |
+| Sequential | `scale_*_viridis_d()` | `scale_*_viridis_c()` |
+| Sequential (alt) | `scale_*_distiller(palette = "Blues")` | `scale_*_gradient()` |
+| Diverging | `scale_*_distiller(palette = "RdBu")` | `scale_*_gradient2()` |
+| Manual | `scale_*_manual(values = c(...))` | `scale_*_gradientn(colours = c(...))` |
+
+Replace `*` with `color` or `fill` depending on the aesthetic.
+
+## Default ggplot colors aren't a great default {.smaller}
+
+```{r}
+#| echo: false
+#| fig-height: 3.5
+df <- tibble(g = LETTERS[1:5], y = c(4, 7, 3, 5, 6))
+
+p_default <- ggplot(df, aes(g, y, fill = g)) + geom_col() +
+  labs(title = "Default (hue_pal)") + theme(legend.position = "none")
+
+p_viridis <- ggplot(df, aes(g, y, fill = g)) + geom_col() +
+  scale_fill_viridis_d(end = 0.9) +
+  labs(title = "Viridis (perceptually uniform)") + theme(legend.position = "none")
+
+p_okabe <- ggplot(df, aes(g, y, fill = g)) + geom_col() +
+  scale_fill_manual(values = c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")) +
+  labs(title = "Okabe-Ito (colorblind-safe)") + theme(legend.position = "none")
+
+p_default + p_viridis + p_okabe
+```
+
+::: {.fragment}
+Defaults are *colorful*. They are not *colorblind-safe*, not *perceptually uniform*, and not *meaningful*.
+:::
+
+::: {.fragment}
+**Pick a palette deliberately.** Once per project, not once per plot.
+:::
+
+# Demo 6 · Type, theme, polish {background-color="#1a3a2e"}
+
+## Built-in themes {.smaller}
+
+`▶ demos/06-themes-and-fonts.R`
+
+```{r}
+#| echo: false
+#| fig-height: 3.5
+
+p_base_demo <- ggplot(life_exp |> filter(country == "Brazil"),
+                     aes(year, life_exp)) +
+  geom_line(linewidth = 1, color = "#2c5f2d") +
+  labs(title = "Brazil")
+
+(p_base_demo + theme_gray()    + ggtitle("theme_gray (default)")) +
+(p_base_demo + theme_minimal() + ggtitle("theme_minimal")) +
+(p_base_demo + theme_bw()      + ggtitle("theme_bw")) +
+(p_base_demo + theme_classic() + ggtitle("theme_classic"))
+```
+
+`theme_minimal()` and `theme_classic()` are safe defaults for most published work.
+
+## The `theme()` function: what you actually customize
+
+```{r}
+#| eval: false
+theme(
+  # Titles and captions
+  plot.title    = element_text(face = "bold", size = 14),
+  plot.subtitle = element_text(color = "grey40"),
+  plot.caption  = element_text(color = "grey50", hjust = 0),
+
+  # Axes
+  axis.title = element_text(size = 12),
+  axis.text  = element_text(size = 10),
+
+  # Legend
+  legend.position = "bottom",       # "top", "right", "none", or c(x, y)
+  legend.title    = element_blank(),
+
+  # Panel
+  panel.grid.minor = element_blank(),
+  panel.grid.major.x = element_blank()
+)
+```
+
+::: aside
+**Tip:** Set a project-wide theme with `theme_set(theme_minimal() + theme(...))` at the top of your script. Then every plot inherits it.
+:::
+
+## Format numbers properly: the `scales` package
+
+```{r}
+#| fig-height: 3
+library(scales)
+
+ggplot(economics, aes(date, unemploy * 1000)) +
+  geom_line(linewidth = 1, color = "#2c5f2d") +
+  scale_y_continuous(labels = label_number(scale = 1e-6, suffix = "M")) +
+  scale_x_date(date_breaks = "10 years", date_labels = "%Y") +
+  labs(title = "US unemployed persons", x = NULL, y = NULL)
+```
+
+::: {.fragment}
+Useful: `label_number()`, `label_percent()`, `label_comma()`, `label_dollar()`, `label_date()`
+:::
+
+## Fonts: and the export gotcha
+
+::: {.incremental}
+- Fonts that look fine on screen often vanish or substitute in PDF export
+- The fix: use the **`ragg`** graphics device for PNG, **`cairo_pdf`** for PDF
+- Old advice (`type = "cairo"` in `ggsave`) no longer works: `ragg` replaced it
+:::
+
+::: {.fragment}
+More in the export section. The device matters.
+:::
+
+# Demo 7 · Faceting {background-color="#1a3a2e"}
+
+## Small multiples {.smaller}
+
+`▶ demos/07-faceting.R`
+
+```{r}
+#| fig-height: 3.5
+# Use gapminder if available (more interesting), else fall back to life_exp.
+if (requireNamespace("gapminder", quietly = TRUE)) {
+  gapminder::gapminder |>
+    filter(continent == "Americas",
+           country %in% c("Brazil", "Argentina", "Mexico", "Chile",
+                          "Colombia", "Peru")) |>
+    ggplot(aes(year, lifeExp)) +
+    geom_line(linewidth = 1, color = "#2c5f2d") +
+    facet_wrap(~ country) +
+    labs(title = "Life expectancy, selected Americas",
+         x = NULL, y = "Years")
+} else {
+  life_exp |>
+    ggplot(aes(year, life_exp)) +
+    geom_line(linewidth = 1, color = "#2c5f2d") +
+    geom_point(size = 2, color = "#2c5f2d") +
+    facet_wrap(~ country) +
+    labs(title = "Life expectancy by country", x = NULL, y = "Years")
+}
+```
+
+**One crowded plot becomes six clear panels.**
+
+## `facet_wrap` vs `facet_grid` {.smaller}
+
+```{r}
+#| eval: false
+# Wrap one variable into a grid of panels
+ggplot(...) + facet_wrap(~ region)
+
+# Cross two variables: rows by year, columns by region
+ggplot(...) + facet_grid(year ~ region)
+
+# Free scales: let each panel pick its own y range
+ggplot(...) + facet_wrap(~ region, scales = "free_y")
+
+# Add row/column labels via labeller
+ggplot(...) + facet_wrap(~ region, labeller = label_both)
+```
+
+> **When in doubt, facet.** Five small clear panels beat one cluttered plot.
+
+# Demo 8 · Accessibility {background-color="#1a3a2e"}
+
+## Why this matters
+
+`▶ demos/08-accessibility.R`
+
+::: {.incremental}
+- **Federal reports** (USDA, NIH, EPA) require Section 508 / ADA compliance
+- **Journals** increasingly require accessibility statements
+- Accessibility-first design produces clearer figures **for everyone**
+:::
+
+::: {.fragment}
+This isn't a checklist. It's better design.
+:::
+
+## What a colorblind reader sees {.smaller}
+
+```{r}
+#| echo: false
+#| fig-height: 3.5
+library(colorspace)
+
+# Build a bad-on-purpose plot using default ggplot colors
+df <- tibble(
+  x = rep(1:10, 4),
+  y = c(1:10, 2:11, 3:12, 4:13),
+  g = rep(c("Apples", "Pears", "Plums", "Grapes"), each = 10)
+)
+bad_p <- ggplot(df, aes(x, y, color = g)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(values = c("red", "darkred", "orange", "green")) +
+  labs(title = "Original") +
+  theme(legend.position = "right")
+
+# Same plot through deuteranope simulation
+bad_p_deutan <- ggplot(df, aes(x, y, color = g)) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(values = colorspace::deutan(c("red", "darkred", "orange", "green"))) +
+  labs(title = "Deuteranopia simulation") +
+  theme(legend.position = "right")
+
+bad_p + bad_p_deutan
+```
+
+The categories that were distinct become indistinguishable.
+
+## Rule 1: don't encode meaning in color alone
+
+```{r}
+#| fig-height: 3
+# Color + linetype: redundant encoding survives grayscale & colorblindness
+ggplot(life_exp, aes(year, life_exp,
+                     color = country,
+                     linetype = country)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(aes(shape = country), size = 2.5) +
+  scale_color_viridis_d(end = 0.85) +
+  labs(title = "Color + linetype + shape, three ways to tell them apart",
+       x = NULL, y = "Years")
+```
+
+::: {.fragment}
+**The test:** print your figure in grayscale. Can you still read it?
+:::
+
+## Rule 2: test what you ship
+
+```{r}
+#| eval: false
+# colorspace package: installed automatically with ggplot2 via the
+# scales package, so you almost certainly have it already.
+library(colorspace)
+
+# Simulate any of three common color vision deficiencies on your plot:
+deutan(c("red", "green", "blue"))   # deuteranopia (red-green)
+protan(c("red", "green", "blue"))   # protanopia (red-green)
+tritan(c("red", "green", "blue"))   # tritanopia (blue-yellow)
+
+# For an interactive emulator on a full plot:
+colorspace::cvd_emulator()
+```
+
+```{r}
+#| eval: false
+# colorBlindness package: 6-panel side-by-side simulation
+library(colorBlindness)
+cvdPlot(my_plot)   # renders original + 5 deficiency simulations
+```
+
+## Rule 3: alt text + table fallbacks (Quarto)
+
+For HTML / web output, add a `fig-alt` chunk option to every figure:
+
+````markdown
+---
+title: "My report"
+format: html
+---
+
+```r
+#| label: fig-life-exp
+#| fig-cap: "Life expectancy in three countries, 1990–2020"
+#| fig-alt: "Line chart showing life expectancy rising steadily
+#|   in Brazil and India but plateauing in the US between
+#|   1990 and 2020."
+ggplot(life_exp, ...) + ...
+```
+````
+
+::: {.fragment}
+**Alt text describes the takeaway, not the chart type.**
+
+A screen-reader user needs the *insight*, not "a line chart with three lines."
+:::
+
+## Accessibility quick checklist {.smaller}
+
+::: {.columns}
+::: {.column}
+**Color**
+
+- Use viridis or Okabe-Ito by default
+- Test with `colorspace::deutan()`
+- Never encode meaning in color alone
+:::
+
+::: {.column}
+**Text**
+
+- ≥10pt captions, ≥12pt body, ≥14pt for projection
+- Dark text on light bg (or vice versa)
+- Avoid rotated text where possible
+:::
+:::
+
+::: {.columns}
+::: {.column}
+**Encoding**
+
+- Color + shape, color + linetype
+- Direct labels with `geom_text_repel()`
+- Provide data table as fallback
+:::
+
+::: {.column}
+**Output**
+
+- Alt text on every figure (`fig-alt`)
+- Tagged PDFs when possible
+- Captions are not alt text
+:::
+:::
+
+> **Color is supplemental. If your figure dies in grayscale, redesign it.**
+
+# Demos 9–13, 18–19 · Maps in R {background-color="#1a3a2e"}
+
+## The mental model
+
+`▶ demos/09-map-basics-sf.R`
+
+A map is **a data frame** where each row has a **`geometry`** column.
+
+::: {.fragment}
+Once you accept that, the rest is just ggplot:
+:::
+
+::: {.fragment}
+```{r}
+#| fig-height: 3.2
+library(sf)
+# sf ships an example shapefile (North Carolina counties) — no download
+nc <- st_read(system.file("shape/nc.shp", package = "sf"), quiet = TRUE)
+
+ggplot(nc) +                     # nc is a data frame...
+  geom_sf(aes(fill = BIR74)) +   # ...with a geometry column
+  scale_fill_viridis_c()
+```
+:::
+
+::: {.fragment}
+That's it. Everything else is detail.
+:::
+
+## Where geometry comes from
+
+```{r}
+#| eval: false
+library(sf)       # the spatial foundation
+library(tigris)   # US Census shapefiles
+# library(tidycensus)    # for data + geometry in one call
+# library(rnaturalearth) # world countries / states
+
+options(tigris_use_cache = TRUE)  # cache shapefiles, saves enormous time
+
+# US states
+us_states <- tigris::states(cb = TRUE, year = 2024)
+
+# US counties for a single state
+wv_counties <- tigris::counties(state = "WV", cb = TRUE, year = 2024)
+
+# World countries
+# world <- rnaturalearth::ne_countries(returnclass = "sf")
+```
+
+::: {.fragment}
+**`cb = TRUE`** returns simplified "cartographic boundary" files, smaller, faster, fine for choropleths. Use full TIGER lines (`cb = FALSE`) only when you need precise boundaries.
+:::
+
+::: aside
+The `year` argument controls the Census vintage. Omit it to use the latest available (currently 2024).
+:::
+
+## Your first choropleth {.smaller}
+
+`▶ demos/10-map-choropleth.R`
+
+```{r}
+#| fig-height: 3.6
+#| output-location: column
+library(sf)
+library(tigris)
+library(dplyr)
+options(tigris_use_cache = TRUE)
+
+# 1. Get the geometry
+us_states <- states(cb = TRUE, year = 2024, resolution = "20m")
+
+# 2. Make some data to join (here: random values; in practice your CSV)
+my_data <- tibble(
+  state_abbr = state.abb,
+  value      = runif(50, 0, 100)
+)
+
+# 3. Join data to geometry
+states_with_data <- us_states |>
+  left_join(my_data, by = c("STUSPS" = "state_abbr"))
+
+# 4. Plot
+ggplot(states_with_data) +
+  geom_sf(aes(fill = value), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "D") +
+  labs(title = "US states, example choropleth", fill = "Value") +
+  theme_void()
+```
+
+## Real census data: WV counties with `tidycensus` {.smaller}
+
+`▶ demos/19-census-wv-counties.R`
+
+```{r}
+#| fig-height: 3.4
+#| output-location: column
+library(tidycensus)   # data + geometry from the Census API in one call
+library(ggplot2)
+
+# Key comes from .Renviron (CENSUS_API_KEY); free signup at
+# https://api.census.gov/data/key_signup.html
+census_api_key(Sys.getenv("CENSUS_API_KEY"))
+
+# B19013_001 = median household income (ACS 5-year)
+wv_income <- get_acs(
+  geography = "county",
+  state     = "WV",
+  variables = "B19013_001",
+  year      = 2022,
+  survey    = "acs5",
+  geometry  = TRUE              # returns an sf data frame
+)
+
+ggplot(wv_income) +
+  geom_sf(aes(fill = estimate), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(
+    option = "D", labels = scales::label_dollar(scale = 1e-3, suffix = "k")
+  ) +
+  labs(
+    title    = "Median household income, West Virginia counties",
+    subtitle = "ACS 5-year estimates, 2018–2022",
+    fill     = NULL,
+    caption  = "Source: US Census Bureau, ACS via tidycensus"
+  ) +
+  theme_void(base_size = 12)
+```
+
+::: {.fragment}
+**`tidycensus::get_acs(geometry = TRUE)`** is the one call you usually want, it joins ACS data to TIGER geometry for you, no manual `left_join()` needed.
+:::
+
+## Projections: the one that bites everyone
+
+`▶ demos/11-map-projections.R`
+
+```{r}
+library(sf); library(tigris); library(dplyr)
+options(tigris_use_cache = TRUE)
+us_states <- states(cb = TRUE, year = 2024, resolution = "20m")
+conus <- us_states |>                  # drop AK/HI/territories for the comparison
+  filter(!STUSPS %in% c("AK", "HI", "PR", "GU", "VI", "MP", "AS"))
+```
+
+::: {.columns}
+::: {.column width="33%"}
+**Default (lon/lat / Web Mercator)**
+
+Stretched. Areas not proportional.
+
+```{r}
+#| fig-height: 3
+ggplot(conus) +
+  geom_sf(fill = "#97bc62", color = "white", linewidth = 0.2)
+```
+:::
+
+::: {.column width="33%"}
+**Albers Equal Area (EPSG:5070)**
+
+The right choice for continental US.
+
+```{r}
+#| fig-height: 3
+ggplot(conus) +
+  geom_sf(fill = "#97bc62", color = "white", linewidth = 0.2) +
+  coord_sf(crs = "EPSG:5070")
+```
+:::
+
+::: {.column width="33%"}
+**With Alaska + Hawaii rescaled**
+
+`shift_geometry()` rescales them so the whole country fits.
+
+```{r}
+#| fig-height: 3
+us_states |>
+  tigris::shift_geometry() |>
+  ggplot() +
+  geom_sf(fill = "#97bc62", color = "white", linewidth = 0.2) +
+  coord_sf(crs = "EPSG:5070")
+```
+:::
+:::
+
+::: {.fragment}
+- Continental US → **EPSG:5070** (Albers Equal Area)
+- World maps → **EPSG:8857** (Equal Earth) or **"+proj=robin"** (Robinson)
+- Picking a projection for somewhere else → `crsuggest::suggest_crs()`
+:::
+
+## Faceted comparison map
+
+`▶ demos/12-map-faceted-comparison.R`
+
+```{r}
+#| fig-height: 3.4
+#| output-location: column
+# Compare two regions side by side: the "small multiples for maps" pattern
+library(sf); library(tigris); library(dplyr); library(scales)
+options(tigris_use_cache = TRUE)
+set.seed(42)
+two_states <- counties(state = c("WV", "OH"), cb = TRUE, year = 2024) |>
+  mutate(state_name = if_else(STATEFP == "39", "Ohio", "West Virginia"),
+         value      = runif(n(), 5, 25))    # demo data; your CSV in practice
+
+ggplot(two_states) +
+  geom_sf(aes(fill = value), color = "white", linewidth = 0.1) +
+  scale_fill_viridis_c(option = "D", labels = label_number(suffix = "%")) +
+  facet_wrap(~ state_name) +                # coord_sf() forbids scales = "free"
+  labs(title    = "County-level indicator comparison",
+       subtitle = "Ohio vs West Virginia, demo data",
+       fill     = NULL) +
+  theme_void(base_size = 13) +
+  theme(strip.text = element_text(face = "bold", size = 14))
+```
+
+**`facet_wrap` works on maps the same way it works on regular plots.**
+
+## Map polish: what separates competent from great {.smaller}
+
+`▶ demos/13-map-polish.R`
+
+```{r}
+#| fig-height: 3.6
+#| output-location: column
+library(sf); library(tigris); library(dplyr); library(scales)
+library(ggspatial)   # scale bars and north arrows
+options(tigris_use_cache = TRUE)
+set.seed(42)
+wv <- counties(state = "WV", cb = TRUE, year = 2024) |>
+  mutate(deviation = runif(n(), -10, 10))    # deviation from state average
+
+ggplot(wv) +
+  geom_sf(aes(fill = deviation), color = "white", linewidth = 0.2) +
+  # 1. Right scale type: diverging, because the data has a midpoint (0)
+  scale_fill_distiller(palette = "RdBu", direction = -1,
+                       limits = c(-10, 10), labels = label_number(suffix = "pp")) +
+  # 2. Scale bar + north arrow, only when geographic precision matters
+  annotation_scale(location = "br", bar_cols = c("grey20", "white")) +
+  annotation_north_arrow(location = "tr", style = north_arrow_minimal()) +
+  # 3. theme_void() drops axis chrome; 4. always caption the source
+  labs(title   = "West Virginia counties: deviation from state average",
+       caption = "Source: simulated data; geometry from US Census TIGER/Line") +
+  theme_void(base_size = 13) +
+  theme(plot.title   = element_text(face = "bold"),
+        plot.caption = element_text(color = "grey50", hjust = 0))
+```
+
+::: {.fragment}
+> If you can make a ggplot, you can make a map. The data has a geometry column; everything else is the same.
+:::
+
+## Rasters: when your data is a grid {.smaller}
+
+`▶ demos/18-raster-basics.R`
+
+Vectors (points / lines / polygons) cover most thematic maps. **Rasters** are the other half: a regular grid of cells, each holding a value. Think satellite imagery, elevation (DEMs), land cover, temperature, precipitation.
+
+```{r}
+#| fig-height: 3.2
+#| output-location: column
+library(terra)       # modern raster engine (successor to {raster})
+library(tidyterra)   # ggplot geoms for SpatRaster
+
+# terra ships an example DEM (elevation, Luxembourg) — no download
+dem <- rast(system.file("ex/elev.tif", package = "terra"))
+
+ggplot() +
+  geom_spatraster(data = dem) +
+  scale_fill_viridis_c(name = "Elevation (m)", na.value = NA) +
+  labs(title = "Elevation: terra example DEM") +
+  theme_minimal()
+```
+
+::: {.fragment}
+- **`terra`**: read, crop, mask, reproject, algebra; replaces older `raster` package
+- **`stars`**: multi-dimensional raster cubes (time, bands); plays well with `sf`
+- **`tidyterra`**: `geom_spatraster()` so rasters live inside the same ggplot grammar
+:::
+
+::: {.fragment}
+> Same rules as vector maps, pick a perceptual scale, project sensibly, label the units.
+:::
+
+# Demo 14 · Combining plots {background-color="#1a3a2e"}
+
+## patchwork: `p1 + p2` is all you need to know
+
+`▶ demos/14-patchwork.R`
+
+```{r}
+#| fig-height: 3
+p_left <- ggplot(life_exp, aes(year, life_exp, color = country)) +
+  geom_line(linewidth = 1) +
+  scale_color_viridis_d(end = 0.85) +
+  labs(title = "Trend", x = NULL, y = "Years")
+
+p_right <- ggplot(life_exp |> filter(year == 2020),
+                  aes(reorder(country, life_exp), life_exp, fill = country)) +
+  geom_col() +
+  scale_fill_viridis_d(end = 0.85, guide = "none") +
+  labs(title = "2020 snapshot", x = NULL, y = "Years")
+
+p_left + p_right
+```
+
+## More patchwork operators
+
+```{r}
+#| eval: false
+p1 + p2                                  # side by side
+p1 / p2                                  # stacked
+(p1 + p2) / p3                           # nesting
+p1 | p2                                  # also side by side
+
+# Shared annotation
+(p1 + p2) +
+  plot_annotation(
+    title    = "Shared title",
+    subtitle = "Across both panels",
+    tag_levels = "A"                     # auto-label panels A, B, C...
+  )
+
+# Collect legends (so you only show one)
+(p1 + p2) + plot_layout(guides = "collect")
+```
+
+::: {.fragment}
+You'll see `gridExtra::grid.arrange()` in older code. **`patchwork` is the modern default.**
+:::
+
+# Demo 15 · Exporting publication-quality output {background-color="#1a3a2e"}
+
+## `ggsave`: the arguments that matter
+
+`▶ demos/15-ggsave-export.R`
+
+```{r}
+#| eval: false
+ggsave(
+  filename = "fig-1.png",
+  plot     = p,
+  width    = 7,      # build at FINAL size, don't rescale later
+  height   = 4,
+  units    = "in",
+  dpi      = 300,    # 300 for print, 150 for screen
+  device   = ragg::agg_png   # ragg handles fonts correctly
+)
+
+# For PDF: use cairo_pdf to embed fonts properly
+ggsave("fig-1.pdf", plot = p,
+       width = 7, height = 4, units = "in",
+       device = cairo_pdf)
+
+# For vector that scales infinitely (web, illustrator)
+ggsave("fig-1.svg", plot = p, width = 7, height = 4, units = "in")
+```
+
+## Export pitfalls
+
+::: {.incremental}
+- **Resizing in Word/PowerPoint after export**: text gets warped. Set the size in `ggsave`.
+- **Fonts substituting in PDF**: use `device = cairo_pdf`
+- **PNG blurry when zoomed**: use SVG or PDF for vector
+- **"Looks fine on my laptop, terrible on the projector"**: always test
+- **Different output on different OS**: `ragg` minimizes this; old `png()` doesn't
+:::
+
+::: {.fragment}
+> **Build the figure at its final size. Don't rescale.**
+:::
+
+# Demo 16 · Common pitfalls {background-color="#1a3a2e"}
+
+## Misleading visualizations to avoid {.smaller}
+
+`▶ demos/16-common-pitfalls.R`
+
+::: {.columns}
+::: {.column}
+- **Truncated y-axis on bar charts**: bars no longer represent magnitude
+- **Dual y-axes**: almost always misleading; one of them is a lie
+- **Pie charts beyond 3 slices**: humans can't compare angles
+- **3D anything**: perspective distorts area
+:::
+
+::: {.column}
+- **Rainbow / jet colormaps**: perceptually non-uniform; fail under colorblindness
+- **Encoding ordering in hue alone**: luminance carries ordering, hue doesn't
+- **More gridlines than data points**: declutter
+- **Tiny axis labels on big figures**: readable at *final* size
+:::
+:::
+
+## Portability and reproducibility pitfalls
+
+::: {.incremental}
+- **Hardcoded file paths** (`/Users/me/...`) → use `here::here("data", "file.csv")`
+- **`setwd()` anywhere in code** → use RStudio projects
+- **"It worked yesterday"** → `renv::snapshot()` locks package versions
+- **Random seeds not set** → `set.seed(42)` whenever randomness is involved
+- **No `sessionInfo()`** → put it at the end of every analysis file
+:::
+
+> **Future-you and reviewer-you are different people. Code for both.**
+
+# Demo 17 · Reproducibility {background-color="#1a3a2e"}
+
+## Make it run on someone else's laptop
+
+`▶ demos/17-reproducibility.R`
+
+::: {.incremental}
+- **RStudio projects**: never `setwd()`; let the project anchor everything
+- **`here::here("data", "file.csv")`**: paths that work regardless of where the script runs
+- **`renv`**: lockfile of every package version, like Python's `requirements.txt`
+- **`sessionInfo()`** at the end of every notebook
+- **Git**: even just `git init` is better than nothing
+- **A README**: what this project does, how to install, how to run
+:::
+
+::: {.fragment}
+> **If you can't hand your project to a stranger and have it run in 10 minutes, it's not done.**
+:::
+
+## A minimal reproducible setup
+
+```{r}
+#| eval: false
+# At the top of every analysis script:
+library(here)
+library(tidyverse)
+library(sf)
+
+set.seed(42)
+
+# Use here() for every path
+data <- read_csv(here("data", "raw", "my-data.csv"))
+
+# At the bottom:
+sessionInfo()
+```
+
+```{r}
+#| eval: false
+# In the R console, once per project:
+renv::init()        # set up renv
+renv::snapshot()    # lock current package versions to renv.lock
+
+# On another machine, to install the same versions:
+renv::restore()
+```
+
+# Demo 20 · Beyond static {background-color="#1a3a2e"}
+
+## When static isn't enough
+
+`▶ demos/20-interactive-plotly.R`
+
+```{r}
+#| eval: false
+# Turn any ggplot into an interactive HTML widget in one line
+library(plotly)
+ggplotly(p)
+```
+
+```{r}
+#| eval: false
+# Interactive web maps (tile-based, like Google Maps)
+library(leaflet)
+leaflet(my_sf_data) |>
+  addTiles() |>
+  addPolygons(fillColor = ~viridis::viridis(10)[as.numeric(cut(value, 10))])
+```
+
+::: {.fragment}
+- **`plotly::ggplotly()`**: quickest path to interactive
+- **`leaflet`**: interactive maps with tile basemaps
+- **`shiny`**: full apps where readers filter / parameterize
+- **`tmap`**: alternative mapping framework (v4 in 2025; "thematic maps", switches between static and interactive)
+:::
+
+::: {.fragment}
+**Caveat:** interactive ≠ better. For a printed report, static is correct.
+:::
+
+# Demo 21 · Capstone {background-color="#1a3a2e"}
+
+## Putting it all together
+
+`▶ demos/21-infographic.R`
+
+Every demo taught one move. The last step is **assembly**, chaining them into a single figure that stands on its own.
+
+::: {.fragment}
+```{r}
+#| eval: false
+# One tidy table -> three complementary views, composed with patchwork
+figure <- (p_trend) / (p_rank | p_map) +
+  plot_layout(heights = c(1.4, 1)) +
+  plot_annotation(
+    title    = "Two decades of gains across three states",
+    subtitle = "A worked example: one tidy table, three views",
+    caption  = "Built in R with ggplot2 + patchwork"
+  )
+
+ggsave(here("figures", "capstone-infographic.png"),
+       figure, device = ragg::agg_png,
+       width = 9, height = 7.5, units = "in", dpi = 300)
+```
+:::
+
+::: {.fragment}
+The pipeline, end to end: **tidy data** → a **trend** + a **ranked bar** + a **locator map** → composed, **branded**, and **exported** at a fixed size and DPI so it looks identical everywhere.
+:::
+
+::: {.fragment}
+**The point:** communication is just assembly. The skill is choosing which views answer the reader's question, then making the result *stand alone*.
+:::
+
+# Wrap-up {background-color="#1a3a2e"}
+
+## Useful R packages: a quick tour {.smaller}
+
+::: {.columns}
+::: {.column}
+**Core plotting**
+
+- **`ggplot2`**: the grammar-of-graphics plotting system
+- **`scales`**: axis formatting, transformations, palettes
+- **`patchwork`**: combine plots with `+` and `/`
+- **`ggrepel`**: labels that don't overlap
+
+**Color**
+
+- **`viridis`**: perceptually-uniform palettes
+- **`colorspace`**: color manipulation + CVD simulation
+- **`RColorBrewer`**: the ColorBrewer palettes
+:::
+
+::: {.column}
+**Spatial / maps**
+
+- **`sf`**: vector spatial data as tidy data frames
+- **`tigris`**: US Census TIGER shapefiles
+- **`tidycensus`**: Census/ACS data with geometry attached
+- **`terra`** + **`tidyterra`**: rasters, in ggplot
+- **`ggspatial`**: scale bars, north arrows
+
+**Output & interactivity**
+
+- **`ragg`**: fast, high-quality graphics device
+- **`plotly`**: turn a ggplot interactive in one line
+- **`gt`**: publication-quality tables
+:::
+:::
+
+::: {.fragment}
+**Workflow:** **`here`** (sane paths) · **`renv`** (lock package versions) · **`quarto`** (reproducible documents)
+:::
+
+## Resources & books {.smaller}
+
+::: {.columns}
+::: {.column}
+**Books (all free online)**
+
+- [R for Data Science (2e)](https://r4ds.hadley.nz/): Wickham, Çetinkaya-Rundel, Grolemund
+- [ggplot2: Elegant Graphics for Data Analysis (3e)](https://ggplot2-book.org/), Wickham et al.
+- [Modern Data Visualization with R](https://rkabacoff.github.io/datavis/), Kabacoff
+- [Geocomputation with R](https://r.geocompx.org/): Lovelace, Nowosad, Muenchow
+- [Analyzing US Census Data](https://walker-data.com/census-r/), Walker
+- [Spatial Data Science (sf/stars)](https://r-spatial.org/book/), Pebesma, Bivand
+:::
+
+::: {.column}
+**Galleries & inspiration**
+
+- [R Graph Gallery](https://r-graph-gallery.com/)
+- [ggplot2 extensions gallery](https://exts.ggplot2.tidyverse.org/gallery/)
+- [#TidyTuesday](https://github.com/rfordatascience/tidytuesday), weekly community challenge
+
+**Accessibility**
+
+- [Color Universal Design (Okabe-Ito)](https://jfly.uni-koeln.de/color/)
+- [WCAG 2.1 quick reference](https://www.w3.org/WAI/WCAG21/quickref/)
+
+**Quarto**
+
+- [quarto.org/docs/guide](https://quarto.org/docs/guide/)
+:::
+:::
+
+# Questions? {.center background-color="#1a3a2e"}
+
+Slides, demo `.R` files, and live-coding companion at:
+
+[**github.com/SiddharthaSBora/r-dataviz-webinar**](https://github.com/SiddharthaSBora/r-dataviz-webinar)

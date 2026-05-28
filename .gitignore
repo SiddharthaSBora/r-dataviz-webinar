@@ -1,0 +1,33 @@
+# Secrets — never commit the Census API key
+.Renviron
+
+# RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Rapp.history
+.Ruserdata
+
+# R
+*_cache/
+/cache/
+*.utf8.md
+*.knit.md
+
+# Quarto
+/.quarto/
+*_files/
+/_site/
+/_freeze/
+
+# Generated figure outputs (demo 15 ggsave examples, demo 21 capstone export)
+fig-unemployment.*
+/figures/
+
+# renv (uncomment if you adopt renv)
+# renv/library/
+# renv/staging/
+# renv/local/
+
+# macOS
+.DS_Store

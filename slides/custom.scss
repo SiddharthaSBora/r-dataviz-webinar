@@ -1,0 +1,76 @@
+/*-- scss:defaults --*/
+
+// Forest-green palette suited to ag/food topic without being USDA-specific.
+$primary-color:    #1a3a2e;   // deep forest
+$secondary-color:  #2c5f2d;   // forest green
+$accent-color:     #97bc62;   // moss
+$body-color:       #1d1d1d;
+$body-bg:          #fdfdfb;
+$link-color:       $secondary-color;
+
+// Typography — readable on a projector
+$font-family-sans-serif: "Source Sans Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+$font-family-monospace:  "JetBrains Mono", "Source Code Pro", Menlo, Consolas, monospace;
+$presentation-font-size-root: 32px;
+$presentation-heading-color: $primary-color;
+$presentation-heading-font-weight: 700;
+
+/*-- scss:rules --*/
+
+// Section-divider slides (used with background-color="#1a3a2e")
+.reveal section[data-background-color="#1a3a2e"] h1,
+.reveal section[data-background-color="#1a3a2e"] h2 {
+  color: #ffffff;
+}
+.reveal section[data-background-color="#1a3a2e"] {
+  color: #f0f0f0;
+}
+
+// Code blocks
+.reveal pre {
+  font-size: 0.65em;
+  line-height: 1.4;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  border-radius: 4px;
+}
+.reveal code {
+  color: $secondary-color;
+}
+
+// Blockquotes — used for takeaways
+.reveal blockquote {
+  border-left: 4px solid $accent-color;
+  background-color: rgba(151, 188, 98, 0.08);
+  padding: 0.5em 1em;
+  margin: 0.5em 0;
+  font-style: normal;
+  font-size: 0.95em;
+}
+
+// Tables
+.reveal table {
+  font-size: 0.75em;
+}
+.reveal th {
+  background-color: rgba(44, 95, 45, 0.1);
+  color: $primary-color;
+}
+
+// Slide titles
+.reveal h2 {
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+
+// Subtle: aside element for disclaimers
+.reveal aside {
+  color: #6a6a6a;
+  font-size: 0.7em;
+  font-style: italic;
+  margin-top: 1em;
+}
+
+// Column gutters
+.reveal .columns {
+  gap: 1em;
+}
