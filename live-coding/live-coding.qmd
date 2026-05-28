@@ -810,7 +810,8 @@ ggsave(
 - [ggplot2: Elegant Graphics for Data Analysis (3e)](https://ggplot2-book.org/)
 - [Geocomputation with R](https://r.geocompx.org/)
 - [Analyzing US Census Data](https://walker-data.com/census-r/)
-- [Modern Data Visualization with R](https://rkabacoff.github.io/datavis/)
+- [Advanced R (2e)](https://adv-r.hadley.nz/)
+- [Happy Git and GitHub for the useR](https://happygitwithr.com/)
 
 **Galleries**
 

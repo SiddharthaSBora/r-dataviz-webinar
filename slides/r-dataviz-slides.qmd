@@ -1688,10 +1688,11 @@ The pipeline, end to end: **tidy data** → a **trend** + a **ranked bar** + a *
 
 - [R for Data Science (2e)](https://r4ds.hadley.nz/): Wickham, Çetinkaya-Rundel, Grolemund
 - [ggplot2: Elegant Graphics for Data Analysis (3e)](https://ggplot2-book.org/), Wickham et al.
-- [Modern Data Visualization with R](https://rkabacoff.github.io/datavis/), Kabacoff
 - [Geocomputation with R](https://r.geocompx.org/): Lovelace, Nowosad, Muenchow
 - [Analyzing US Census Data](https://walker-data.com/census-r/), Walker
 - [Spatial Data Science (sf/stars)](https://r-spatial.org/book/), Pebesma, Bivand
+- [Advanced R (2e)](https://adv-r.hadley.nz/), Wickham
+- [Happy Git and GitHub for the useR](https://happygitwithr.com/), Bryan
 :::
 
 ::: {.column}
