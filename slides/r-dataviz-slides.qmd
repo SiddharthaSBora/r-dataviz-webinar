@@ -94,14 +94,14 @@ All materials live here:
 :::
 :::
 
-## What this hour gives you {.smaller}
+## Our goals for today {.smaller}
 
-Three concrete things you'll leave with:
+Discuss/practice:
 
 ::: {.incremental}
 - **A workflow** for going from raw data to a polished static figure in R
 - **The reasoning** behind design choices: color, type, layout, accessibility
-- **A working knowledge of maps in R**: the part most people find hardest
+- **A working knowledge of maps in R**: the part most people find annoying
 :::
 
 ::: {.fragment .fade-in}
@@ -208,7 +208,8 @@ Visualization is how you *understand* data, as much as how you present it.
 ::: {.column width="45%"}
 ```{r}
 #| echo: false
-#| fig-height: 4
+#| fig-width: 5
+#| fig-height: 4.6
 library(tidyr)
 
 anscombe_tidy <- anscombe |>
@@ -252,7 +253,8 @@ Tidy data is what lets every downstream step (transform, plot, model) work with 
 ::: {.fragment}
 ```{r}
 #| echo: false
-#| fig-height: 3.6
+#| fig-width: 4.2
+#| fig-height: 4.6
 grid <- expand.grid(col = 1:3, row = 1:4)
 ggplot(grid, aes(col, -row)) +
   geom_tile(fill = "#97bc62", color = "white", linewidth = 2) +

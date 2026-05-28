@@ -44,7 +44,7 @@ life_exp_sample <- function() {
 # `base_size` scales every text element together, handy when a figure
 # will be projected vs. printed.
 
-theme_webinar <- function(base_size = 13) {
+theme_webinar <- function(base_size = 15) {
   ggplot2::theme_minimal(base_size = base_size) +
     ggplot2::theme(
       plot.title       = ggplot2::element_text(face = "bold"),
