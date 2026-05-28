@@ -74,4 +74,4 @@ Six demos (04, 07, 08, 14, 17, 21) source `R/helpers.R`, which provides
 
 ## License
 
-MIT. Use, modify, and redistribute freely.
+MIT. Use, modify, and redistribute freely. See [LICENSE](LICENSE).
